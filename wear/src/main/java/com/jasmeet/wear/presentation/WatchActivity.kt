@@ -60,8 +60,8 @@ class WatchActivity : ComponentActivity() {
 
 @Composable
 fun WearApp(manager: WearCapabilityManager) {
-    val reachable by manager.peerReachable.collectAsState()
-    val installed by manager.peerInstalled.collectAsState()
+    val deviceConnected by manager.deviceConnected.collectAsState()
+    val appAlive by manager.appAlive.collectAsState()
     val phoneNodeId by manager.phoneNodeId.collectAsState()
 
     WearOsTheme {
@@ -88,15 +88,15 @@ fun WearApp(manager: WearCapabilityManager) {
                     item {
                         StatusRow(
                             label = "Phone",
-                            value = reachable.label(),
-                            state = reachable.toState(),
+                            value = deviceConnected.label(),
+                            state = deviceConnected.toState(),
                         )
                     }
                     item {
                         StatusRow(
                             label = "Phone app",
-                            value = installed.label(),
-                            state = installed.toState(),
+                            value = appAlive.label(),
+                            state = appAlive.toState(),
                         )
                     }
                     item {

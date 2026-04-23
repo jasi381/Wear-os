@@ -69,8 +69,8 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompanionScreen(manager: CompanionCapabilityManager) {
-    val reachable by manager.peerReachable.collectAsState()
-    val installed by manager.peerInstalled.collectAsState()
+    val deviceConnected by manager.deviceConnected.collectAsState()
+    val appAlive by manager.appAlive.collectAsState()
     val nodeId by manager.wearNodeId.collectAsState()
 
     Scaffold(
@@ -88,15 +88,15 @@ private fun CompanionScreen(manager: CompanionCapabilityManager) {
         ) {
             StatusCard(
                 title = "Watch connected",
-                value = reachable.label(onText = "Yes", offText = "No"),
-                detail = reachable.describeReachable(),
-                state = reachable.toState(),
+                value = deviceConnected.label(onText = "Yes", offText = "No"),
+                detail = deviceConnected.describeDevice(),
+                state = deviceConnected.toState(),
             )
             StatusCard(
-                title = "Wear app installed",
-                value = installed.label(onText = "Yes", offText = "No"),
-                detail = installed.describeInstalled(),
-                state = installed.toState(),
+                title = "Wear app alive",
+                value = appAlive.label(onText = "Yes", offText = "No"),
+                detail = appAlive.describeApp(),
+                state = appAlive.toState(),
             )
             StatusCard(
                 title = "Watch node id",
@@ -190,14 +190,14 @@ private fun Boolean?.label(onText: String, offText: String): String = when (this
     null -> "Checking…"
 }
 
-private fun Boolean?.describeReachable(): String = when (this) {
-    true -> "Paired watch is online & app is reachable"
-    false -> "Watch offline, BT off, or wear app not installed"
-    null -> "Querying capability client…"
+private fun Boolean?.describeDevice(): String = when (this) {
+    true -> "Watch paired & reachable over BT/Wi-Fi"
+    false -> "No watch reachable (BT off, out of range, or unpaired)"
+    null -> "Querying node client…"
 }
 
-private fun Boolean?.describeInstalled(): String = when (this) {
-    true -> "Wear app present on at least one paired node"
-    false -> "Wear app is not installed on any paired watch"
-    null -> "Querying capability client…"
+private fun Boolean?.describeApp(): String = when (this) {
+    true -> "Wear app responded to heartbeat ping"
+    false -> "No pong — wear app not installed or not responding"
+    null -> "Waiting for first heartbeat…"
 }

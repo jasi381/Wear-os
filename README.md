@@ -2,13 +2,18 @@
 
 A minimal reference project showing **bidirectional peer detection** between a
 Wear OS watch and its paired Android phone using the Wearable Data Layer
-`CapabilityClient`.
+`NodeClient` + `MessageClient` ping/pong heartbeat (pattern ported from
+`kc-android`).
 
-Both sides answer three questions in real time:
+Both sides answer two independent questions in real time:
 
-- Is the other device **connected**?
-- Is the companion app **installed** on it?
-- Was the companion app just **uninstalled** (vs. merely disconnected)?
+- Is the other **device** paired & reachable over BT/Wi-Fi? (`deviceConnected`)
+- Is the other side's **app** installed and responding? (`appAlive`)
+
+Separating these matters: a watch can be connected (official Wear OS companion
+shows "connected") while our wear APK isn't installed. A single
+`CapabilityClient` signal collapses both into "not connected" and hides the
+distinction.
 
 ## Project layout
 
@@ -20,48 +25,41 @@ WearOs/
     └── .../connectivity/WearCapabilityManager.kt
 ```
 
-Each module advertises one capability and listens for the other's:
-
-| Module | Advertises                | Listens for                |
-|--------|---------------------------|----------------------------|
-| `app`  | `jasmeet_wearos_mobile`   | `jasmeet_wearos_wear`      |
-| `wear` | `jasmeet_wearos_wear`     | `jasmeet_wearos_mobile`    |
-
-Declared in `src/main/res/values/wear.xml` on each side:
-
-```xml
-<resources>
-    <string-array name="android_wear_capabilities">
-        <item>jasmeet_wearos_mobile</item>   <!-- or ..._wear on watch side -->
-    </string-array>
-</resources>
-```
-
 ## How detection works
 
-Each `CapabilityManager` exposes three `StateFlow`s:
+Each manager exposes three `StateFlow`s:
 
 ```kotlin
-val peerReachable: StateFlow<Boolean?>   // null = checking, true = online & reachable
-val peerInstalled: StateFlow<Boolean?>   // null = checking, true = installed somewhere
-val <peer>NodeId:  StateFlow<String?>    // active reachable node id, if any
+val deviceConnected: StateFlow<Boolean?>  // null = checking, true = paired node reachable
+val appAlive:        StateFlow<Boolean?>  // null = checking, true = peer app pong'd back
+val <peer>NodeId:    StateFlow<String?>   // active node id, if any
 ```
 
-On start the manager:
+On `start()` each manager:
 
-1. Registers a `CapabilityClient.OnCapabilityChangedListener` with
-   `FILTER_REACHABLE`.
-2. Calls `getCapability(..., FILTER_ALL)` for the first-load installed check.
-3. Calls `getCapability(..., FILTER_REACHABLE)` for the first-load online check.
+1. Registers a `MessageClient.OnMessageReceivedListener` for the `/jasmeet/*` paths.
+2. Runs a 10 s heartbeat that calls `NodeClient.connectedNodes`:
+    - empty list → `deviceConnected = false`, `appAlive = false`
+    - non-empty → `deviceConnected = true`, then sends `PING` to the best node
+      (prefers `isNearby`) and starts a 5 s pong timeout.
+3. On `PONG_PATH` received → `appAlive = true`. On timeout → `appAlive = false`.
 
-When the callback fires with `reachable == false`, the manager re-queries
-`FILTER_ALL` to disambiguate:
+Each side also registers a `WearableListenerService`
+(`PingPongListenerService`) with an intent-filter for
+`com.google.android.gms.wearable.MESSAGE_RECEIVED` on `/jasmeet/*` so it
+replies to pings even when the foreground activity is gone.
 
-| `reachable` | `installed` | Meaning                         |
-|-------------|-------------|---------------------------------|
-| true        | true        | Peer is online & app is running |
-| false       | true        | Peer is offline / BT off        |
-| false       | false       | **Peer app was uninstalled**    |
+### Interpreting the two flags
+
+| `deviceConnected` | `appAlive` | Meaning                                           |
+|-------------------|------------|---------------------------------------------------|
+| true              | true       | Peer reachable & app installed/responding         |
+| true              | false      | Peer reachable, but peer app not installed/alive  |
+| false             | false      | No paired node reachable (BT off / out of range)  |
+
+The previous `jasmeet_wearos_{mobile,wear}` capability entries in `wear.xml`
+are no longer load-bearing for detection — they can stay (harmless) or be
+removed without affecting behaviour.
 
 ## Running
 
@@ -104,64 +102,47 @@ adb -s <wear-id> uninstall com.jasmeet.wear     # old id
 ./gradlew :wear:installDebug                     # installs com.jasmeet.wearos
 ```
 
-### 2. Each side listens for the OTHER side's capability
+### 2. `PingPongListenerService` must be registered in the manifest
 
-It's easy to copy-paste and end up with both managers listening for the same
-string. The pattern is:
+If you forget the `<service>` entry or the `MESSAGE_RECEIVED` intent-filter,
+the peer can still *ping* you but you'll never reply — so `appAlive` on the
+other side stays stuck at `false` even though your app is installed. Path
+prefix in the filter (`/jasmeet`) must match `PING_PATH` / `PONG_PATH`.
 
-- Phone advertises `..._mobile`, listens for `..._wear`
-- Watch advertises `..._wear`, listens for `..._mobile`
+### 3. `NodeClient` alone doesn't prove the peer app is installed
 
-Advertising your own capability is what makes the peer see you; listening for
-the peer's capability is what tells you about them.
+`connectedNodes` returns *any* paired Wear OS node, regardless of what apps
+are on it. That's the whole point: `deviceConnected` is the
+app-independent signal. The pong response is what confirms the peer APK is
+present and running.
 
-### 3. `FILTER_REACHABLE` alone can't tell you "uninstalled"
+### 4. Emulator BT bridge is flaky
 
-`FILTER_REACHABLE` only reports nodes that are online *and* running a
-capability. A watch going out of Bluetooth range looks identical to the app
-being uninstalled — both give you `nodes = []`. Always re-check with
-`FILTER_ALL` before concluding "uninstalled".
+On fresh emulator pairs, the first heartbeat can take up to ~15 s to flip
+`deviceConnected = true`. The UI has a **Refresh** button that calls
+`manager.refresh()` to trigger an immediate `NodeClient.connectedNodes` +
+`PING` roundtrip.
 
-### 4. Register for `FILTER_REACHABLE`, not `FILTER_ALL`
-
-`addListener(..., FILTER_ALL)` does not reliably fire when the peer goes
-offline. Use `FILTER_REACHABLE` for the live listener; use `FILTER_ALL` only
-for the on-demand installed check.
-
-### 5. Emulator BT bridge is flaky
-
-On fresh emulator pairs, the first capability event sometimes takes
-30–60 seconds after install. The UI has a **Refresh** button that calls
-`manager.refresh()` to force a `getCapability` roundtrip if you don't want to
-wait.
-
-### 6. Watch app must be launched at least once
-
-Wear OS lazy-initialises capability advertisement. If the watch app has never
-been opened, the phone won't see the `..._wear` capability even though the
-APK is installed. Tap the watch app icon once after install.
-
-### 7. Capability XML file name does not matter — the resource name does
-
-The file can be called `wear.xml`, `capabilities.xml`, anything — what matters
-is the `string-array name="android_wear_capabilities"`. Multiple XML files
-contributing to the same array get merged.
-
-### 8. Don't skip the lifecycle hooks
+### 5. Don't skip the lifecycle hooks
 
 `start()` and `stop()` are called from `onStart` / `onStop`. Forgetting to
-call `stop()` leaks the listener across config changes. Forgetting to call
-`start()` (e.g. calling it only in `onCreate` but losing the manager across a
-process restart) gives stale state.
+call `stop()` leaks the message listener and the heartbeat `Runnable` across
+config changes.
 
-## Testing the 4 scenarios
+### 6. `WearableListenerService` runs in its own process
 
-| Scenario                       | How to trigger                                      | Phone UI shows                | Watch UI shows                |
-|--------------------------------|-----------------------------------------------------|-------------------------------|-------------------------------|
-| Happy path                     | Both running, watch app opened once                 | connected ✓  installed ✓      | connected ✓  installed ✓      |
-| Watch disconnect               | `adb -s <wear> emu kill`                            | connected ✗  installed ✓      | (n/a — off)                   |
-| Watch app uninstalled          | `adb -s <wear> uninstall com.jasmeet.wearos`        | connected ✗  installed ✗      | (n/a — gone)                  |
-| Phone app uninstalled          | `adb -s <phone> uninstall com.jasmeet.wearos`       | (n/a — gone)                  | connected ✗  installed ✗      |
+`PingPongListenerService` fires even when the activity is gone — that's the
+feature. But it means you can't share in-memory state between the manager and
+the service; keep the reply logic self-contained (as it is here).
+
+## Testing the scenarios
+
+| Scenario                    | How to trigger                                      | Phone UI shows          | Watch UI shows          |
+|-----------------------------|-----------------------------------------------------|-------------------------|-------------------------|
+| Happy path                  | Both APKs installed, both devices on                | connected ✓  app ✓      | connected ✓  app ✓      |
+| Wear APK not installed      | phone+watch paired, only phone APK installed        | connected ✓  app ✗      | (n/a — gone)            |
+| Phone APK not installed     | phone+watch paired, only wear APK installed         | (n/a — gone)            | connected ✓  app ✗      |
+| Watch powered off / BT off  | `adb -s <wear> emu kill`                            | connected ✗  app ✗      | (n/a — off)             |
 
 Watch logs on either side:
 
