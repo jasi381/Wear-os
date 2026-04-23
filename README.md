@@ -170,8 +170,3 @@ adb -s <phone-id> logcat -s CompanionCapabilityMgr
 adb -s <wear-id>  logcat -s WearCapabilityMgr
 ```
 
-## Part 1 scope
-
-This commit covers connectivity detection only. Message passing, DataClient
-sync, authentication handoff, and wear-specific features will come in later
-parts.
