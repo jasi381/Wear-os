@@ -2,6 +2,7 @@ package com.jasmeet.wearos
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -18,14 +19,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -47,6 +52,8 @@ import com.jasmeet.wearos.connectivity.CompanionCapabilityManager
 import com.jasmeet.wearos.data.DataLayerManager
 import com.jasmeet.wearos.ui.theme.WearOsTheme
 
+private enum class Screen { Home, Part1, Part2, Part3 }
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var capabilityManager: CompanionCapabilityManager
@@ -59,7 +66,7 @@ class MainActivity : ComponentActivity() {
         dataLayerManager = DataLayerManager(applicationContext)
         setContent {
             WearOsTheme {
-                CompanionScreen(
+                AppNav(
                     capabilityManager = capabilityManager,
                     dataLayerManager = dataLayerManager,
                 )
@@ -80,25 +87,154 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CompanionScreen(
+private fun AppNav(
     capabilityManager: CompanionCapabilityManager,
     dataLayerManager: DataLayerManager,
 ) {
-    val deviceConnected by capabilityManager.deviceConnected.collectAsState()
-    val appAlive by capabilityManager.appAlive.collectAsState()
-    val nodeId by capabilityManager.wearNodeId.collectAsState()
+    var screen by remember { mutableStateOf(Screen.Home) }
 
-    val lastReceived by dataLayerManager.lastReceivedMessage.collectAsState()
-    val myCounter by dataLayerManager.myCounter.collectAsState()
-    val peerCounter by dataLayerManager.peerCounter.collectAsState()
+    BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }
 
-    var messageText by remember { mutableStateOf("") }
+    when (screen) {
+        Screen.Home  -> HomeScreen(onNavigate = { screen = it })
+        Screen.Part1 -> Part1Screen(capabilityManager, onBack = { screen = Screen.Home })
+        Screen.Part2 -> Part2Screen(capabilityManager, dataLayerManager, onBack = { screen = Screen.Home })
+        Screen.Part3 -> Part3Screen(onBack = { screen = Screen.Home })
+    }
+}
+
+// ── Home ─────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeScreen(onNavigate: (Screen) -> Unit) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = { TopAppBar(title = { Text("WearOs Demo", fontWeight = FontWeight.Bold) }) },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Wearable Data Layer API — a step-by-step guide to phone ↔ watch communication.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            PartCard(
+                number = "1",
+                title = "Peer Detection",
+                description = "Detect if the watch is physically reachable (BT/Wi-Fi) and whether the companion app is installed — independently.",
+                onClick = { onNavigate(Screen.Part1) },
+            )
+            PartCard(
+                number = "2",
+                title = "Data Messaging",
+                description = "Send real-time text messages with MessageClient and sync a persistent tap counter with DataClient.",
+                onClick = { onNavigate(Screen.Part2) },
+            )
+            PartCard(
+                number = "3",
+                title = "Remote Activity",
+                description = "Launch activities on the watch from the phone and vice versa — full bidirectional remote control.",
+                onClick = { onNavigate(Screen.Part3) },
+                enabled = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PartCard(
+    number: String,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (enabled) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = number,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// ── Part 1 — Peer Detection ───────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Part1Screen(
+    manager: CompanionCapabilityManager,
+    onBack: () -> Unit,
+) {
+    val deviceConnected by manager.deviceConnected.collectAsState()
+    val appAlive by manager.appAlive.collectAsState()
+    val nodeId by manager.wearNodeId.collectAsState()
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        topBar = { TopAppBar(title = { Text("Companion · WearOs") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Part 1 · Peer Detection") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -108,8 +244,13 @@ private fun CompanionScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(vertical = 16.dp),
         ) {
-            // ── Peer Status ──────────────────────────────────────────
-            item { SectionHeader("Peer Status") }
+            item {
+                Text(
+                    text = "NodeClient checks physical BT/Wi-Fi reachability. A separate ping/pong heartbeat confirms the companion app is installed and responding.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             item {
                 StatusCard(
                     title = "Watch connected",
@@ -136,14 +277,60 @@ private fun CompanionScreen(
             }
             item {
                 OutlinedButton(
-                    onClick = capabilityManager::refresh,
+                    onClick = manager::refresh,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Refresh") }
             }
+        }
+    }
+}
 
-            // ── Messages (MessageClient) ─────────────────────────────
-            item { Spacer(Modifier.height(4.dp)) }
-            item { SectionHeader("Messages  ·  MessageClient") }
+// ── Part 2 — Data Messaging ───────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Part2Screen(
+    capabilityManager: CompanionCapabilityManager,
+    dataLayerManager: DataLayerManager,
+    onBack: () -> Unit,
+) {
+    val nodeId by capabilityManager.wearNodeId.collectAsState()
+    val lastReceived by dataLayerManager.lastReceivedMessage.collectAsState()
+    val myCounter by dataLayerManager.myCounter.collectAsState()
+    val peerCounter by dataLayerManager.peerCounter.collectAsState()
+
+    var messageText by remember { mutableStateOf("") }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                title = { Text("Part 2 · Data Messaging") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 16.dp),
+        ) {
+            // ── MessageClient ────────────────────────────────────────
+            item { SectionHeader("MessageClient  —  real-time messages") }
+            item {
+                Text(
+                    text = "Fire-and-forget delivery to a specific node. Message is dropped if the peer app is not in foreground.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             item {
                 OutlinedTextField(
                     value = messageText,
@@ -175,9 +362,16 @@ private fun CompanionScreen(
                 )
             }
 
-            // ── Data Sync (DataClient) ───────────────────────────────
+            // ── DataClient ───────────────────────────────────────────
             item { Spacer(Modifier.height(4.dp)) }
-            item { SectionHeader("Tap Counter  ·  DataClient") }
+            item { SectionHeader("DataClient  —  synced tap counter") }
+            item {
+                Text(
+                    text = "DataItems persist on the source node and sync to all connected nodes. Counter survives app restarts and reconnects.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             item {
                 CounterCard(
                     myLabel = "Phone taps",
@@ -190,6 +384,59 @@ private fun CompanionScreen(
         }
     }
 }
+
+// ── Part 3 — Coming Soon ──────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Part3Screen(onBack: () -> Unit) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            TopAppBar(
+                title = { Text("Part 3 · Coming Soon") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Next topics planned:",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            listOf(
+                "RemoteActivityHelper.startRemoteActivity() to open watch from phone",
+                "Intent-based deep links back from watch to phone",
+                "Bidirectional launch with confirmation feedback",
+            ).forEach { item ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Text(
+                        text = item,
+                        modifier = Modifier.padding(14.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Shared UI components ──────────────────────────────────────────────────────
 
 @Composable
 private fun SectionHeader(text: String) {
@@ -270,17 +517,10 @@ private fun CounterCard(
 }
 
 @Composable
-private fun StatusCard(
-    title: String,
-    value: String,
-    detail: String,
-    state: StatusState,
-) {
+private fun StatusCard(title: String, value: String, detail: String, state: StatusState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(
             modifier = Modifier
@@ -316,8 +556,8 @@ private fun StatusCard(
 @Composable
 private fun StatusDot(state: StatusState) {
     val color = when (state) {
-        StatusState.On -> Color(0xFF2E7D32)
-        StatusState.Off -> Color(0xFFC62828)
+        StatusState.On      -> Color(0xFF2E7D32)
+        StatusState.Off     -> Color(0xFFC62828)
         StatusState.Unknown -> Color(0xFF9E9E9E)
     }
     Box(
@@ -330,26 +570,26 @@ private fun StatusDot(state: StatusState) {
 
 private enum class StatusState { On, Off, Unknown }
 
-private fun Boolean?.toState(): StatusState = when (this) {
-    true -> StatusState.On
+private fun Boolean?.toState() = when (this) {
+    true  -> StatusState.On
     false -> StatusState.Off
-    null -> StatusState.Unknown
+    null  -> StatusState.Unknown
 }
 
-private fun Boolean?.label(onText: String, offText: String): String = when (this) {
-    true -> onText
+private fun Boolean?.label(onText: String, offText: String) = when (this) {
+    true  -> onText
     false -> offText
-    null -> "Checking…"
+    null  -> "Checking…"
 }
 
-private fun Boolean?.describeDevice(): String = when (this) {
-    true -> "Watch paired & reachable over BT/Wi-Fi"
+private fun Boolean?.describeDevice() = when (this) {
+    true  -> "Watch paired & reachable over BT/Wi-Fi"
     false -> "No watch reachable (BT off, out of range, or unpaired)"
-    null -> "Querying node client…"
+    null  -> "Querying node client…"
 }
 
-private fun Boolean?.describeApp(): String = when (this) {
-    true -> "Wear app responded to heartbeat ping"
+private fun Boolean?.describeApp() = when (this) {
+    true  -> "Wear app responded to heartbeat ping"
     false -> "No pong — wear app not installed or not responding"
-    null -> "Waiting for first heartbeat…"
+    null  -> "Waiting for first heartbeat…"
 }
