@@ -85,7 +85,7 @@ fun WearApp(
                 WearScreen.Home  -> WearHomeScreen(onNavigate = { screen = it })
                 WearScreen.Part1 -> WearPart1Screen(capabilityManager)
                 WearScreen.Part2 -> WearPart2Screen(capabilityManager, dataLayerManager)
-                WearScreen.Part3 -> WearPart3Screen()
+                WearScreen.Part3 -> WearPart3Screen(capabilityManager)
             }
         }
     }
@@ -138,8 +138,8 @@ private fun WearHomeScreen(onNavigate: (WearScreen) -> Unit) {
                     number = "3",
                     title = "Remote Activity",
                     description = "Launch activities across devices",
-                    onClick = {},
-                    enabled = false,
+                    onClick = { onNavigate(WearScreen.Part3) },
+                    enabled = true,
                 )
             }
         }
@@ -319,12 +319,23 @@ private fun WearPart2Screen(
     }
 }
 
-// ── Part 3 — Remote Activity (placeholder) ───────────────────────────────────
+// ── Part 3 — Remote Activity ──────────────────────────────────────────────────
 
 @Composable
-private fun WearPart3Screen() {
+private fun WearPart3Screen(manager: WearCapabilityManager) {
+    val phoneNodeId by manager.phoneNodeId.collectAsState()
+    val appAlive by manager.appAlive.collectAsState()
+
     val listState = rememberTransformingLazyColumnState()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    ScreenScaffold(
+        scrollState = listState,
+        edgeButton = {
+            EdgeButton(
+                onClick = manager::launchPhoneActivity,
+                enabled = phoneNodeId != null && appAlive == true,
+            ) { Text("Launch Phone App") }
+        },
+    ) { contentPadding ->
         TransformingLazyColumn(
             contentPadding = contentPadding,
             state = listState,
@@ -335,25 +346,22 @@ private fun WearPart3Screen() {
                     Text("Part 3 · Remote Activity")
                 }
             }
-            listOf(
-                "Open watch screen from phone",
-                "Open phone screen from watch",
-                "Bidirectional launch + feedback",
-            ).forEach { topic ->
-                item {
-                    Card(
-                        onClick = {},
-                        enabled = false,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = topic,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            item {
+                StatusRow(
+                    label = "Target Phone",
+                    value = phoneNodeId?.take(6) ?: "No phone",
+                    state = if (phoneNodeId != null) StatusState.On else StatusState.Off,
+                )
+            }
+            item {
+                Text(
+                    text = "Launch an activity on your phone via RemoteActivityHelper.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp),
+                )
             }
         }
     }

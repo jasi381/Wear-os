@@ -1,10 +1,11 @@
 # Wear OS ↔ Phone Connectivity
 
 A minimal reference project demonstrating the **Wearable Data Layer API** across
-two parts:
+three parts:
 
 - **Part 1** — bidirectional peer detection (branch `part1`)
-- **Part 2** — real-time messaging and persistent data sync (this branch, `part2`)
+- **Part 2** — real-time messaging and persistent data sync (branch `part2`)
+- **Part 3** — remote activity launching (this branch, `part3`)
 
 Both sides answer independent questions in real time:
 
@@ -127,6 +128,56 @@ fun start() / stop()                            // call from onStart / onStop
 
 ---
 
+## Part 3 — Remote Activity Launching
+
+### How it works
+
+Remote Activity Launching allows you to open a specific screen on the other device
+remotely. It uses the `RemoteActivityHelper` from the Jetpack Wear Remote
+Interactions library.
+
+### Intent-based deep links
+
+The sender specifies a URI in an `ACTION_VIEW` intent. The receiving app must
+have a matching `<intent-filter>` in its `AndroidManifest.xml`:
+
+```xml
+<activity android:name=".MainActivity">
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="wearos" android:host="launch" />
+    </intent-filter>
+</activity>
+```
+
+### Launching on the Watch
+
+To launch an activity on a specific watch, the phone needs the `nodeId` obtained in
+Part 1:
+
+```kotlin
+val remoteActivityHelper = RemoteActivityHelper(context, ContextCompat.getMainExecutor(context))
+val intent = Intent(Intent.ACTION_VIEW)
+    .addCategory(Intent.CATEGORY_BROWSABLE)
+    .setData(Uri.parse("wearos://launch"))
+
+remoteActivityHelper.startRemoteActivity(intent, nodeId)
+```
+
+### Launching on the Phone
+
+To launch on the companion phone, the watch can pass `null` as the `nodeId`. This
+automatically targets the paired companion device:
+
+```kotlin
+// null nodeId = paired phone
+remoteActivityHelper.startRemoteActivity(intent, null)
+```
+
+---
+
 ## Running
 
 Two emulators required: a phone + a Wear OS watch, paired via
@@ -146,6 +197,8 @@ Android Studio **Device Manager → Pair Wearable**.
 | Increment counter on watch      | Tap "Tap +1" on watch                    | Phone's "Watch taps" updates            |
 | Counter survives background     | Increment, background app, reopen        | Count still shown (DataClient persists) |
 | Message lost while backgrounded | Send while peer app is closed            | Message not shown (MessageClient drops) |
+| Launch watch from phone         | In Part 3, tap "Launch Activity on Watch"| Watch app opens/brings to front         |
+| Launch phone from watch         | In Part 3, tap "Launch Phone App"        | Phone app opens/brings to front         |
 
 ---
 
@@ -185,6 +238,12 @@ Forgetting leaks listeners and the heartbeat `Runnable` across config changes.
 `/jasmeet/counter/phone` is written by the phone and read by the watch.
 `/jasmeet/counter/wear` is written by the watch and read by the phone.
 Using a single shared path would cause each side to react to its own write (echo).
+
+### 7. RemoteActivityHelper requirements
+
+The target activity **must** have an intent-filter with `ACTION_VIEW`,
+`CATEGORY_BROWSABLE`, and a matching `data` scheme/host. Without `CATEGORY_BROWSABLE`,
+`RemoteActivityHelper` will fail to route the intent.
 
 ## Logs
 

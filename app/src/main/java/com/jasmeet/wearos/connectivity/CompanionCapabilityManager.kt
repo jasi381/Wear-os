@@ -1,9 +1,13 @@
 package com.jasmeet.wearos.connectivity
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.core.content.ContextCompat
+import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Node
@@ -25,7 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * installed — CapabilityClient alone cannot tell these two apart.
  */
 class CompanionCapabilityManager(
-    context: Context,
+    private val context: Context,
 ) : MessageClient.OnMessageReceivedListener {
 
     private val nodeClient = Wearable.getNodeClient(context.applicationContext)
@@ -74,6 +78,18 @@ class CompanionCapabilityManager(
 
     fun refresh() {
         checkConnection()
+    }
+
+    fun launchWatchActivity() {
+        val nodeId = _wearNodeId.value ?: return
+        Log.d(TAG, "launchWatchActivity() nodeId=$nodeId")
+
+        val remoteActivityHelper = RemoteActivityHelper(context, ContextCompat.getMainExecutor(context))
+        val intent = Intent(Intent.ACTION_VIEW)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .setData(Uri.parse("wearos://launch"))
+
+        remoteActivityHelper.startRemoteActivity(intent, nodeId)
     }
 
     private fun checkConnection() {

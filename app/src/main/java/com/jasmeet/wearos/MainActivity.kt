@@ -100,7 +100,7 @@ private fun AppNav(
         Screen.Home  -> HomeScreen(onNavigate = { screen = it })
         Screen.Part1 -> Part1Screen(capabilityManager, onBack = { screen = Screen.Home })
         Screen.Part2 -> Part2Screen(capabilityManager, dataLayerManager, onBack = { screen = Screen.Home })
-        Screen.Part3 -> Part3Screen(onBack = { screen = Screen.Home })
+        Screen.Part3 -> Part3Screen(capabilityManager, onBack = { screen = Screen.Home })
     }
 }
 
@@ -145,7 +145,7 @@ private fun HomeScreen(onNavigate: (Screen) -> Unit) {
                 title = "Remote Activity",
                 description = "Launch activities on the watch from the phone and vice versa — full bidirectional remote control.",
                 onClick = { onNavigate(Screen.Part3) },
-                enabled = false,
+                enabled = true,
             )
         }
     }
@@ -385,16 +385,23 @@ private fun Part2Screen(
     }
 }
 
-// ── Part 3 — Coming Soon ──────────────────────────────────────────────────────
+// ── Part 3 — Remote Activity ──────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Part3Screen(onBack: () -> Unit) {
+private fun Part3Screen(
+    manager: CompanionCapabilityManager,
+    onBack: () -> Unit,
+) {
+    val deviceConnected by manager.deviceConnected.collectAsState()
+    val appAlive by manager.appAlive.collectAsState()
+    val nodeId by manager.wearNodeId.collectAsState()
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("Part 3 · Coming Soon") },
+                title = { Text("Part 3 · Remote Activity") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -403,33 +410,63 @@ private fun Part3Screen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 16.dp),
         ) {
-            Text(
-                text = "Next topics planned:",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            listOf(
-                "RemoteActivityHelper.startRemoteActivity() to open watch from phone",
-                "Intent-based deep links back from watch to phone",
-                "Bidirectional launch with confirmation feedback",
-            ).forEach { item ->
+            item {
+                Text(
+                    text = "RemoteActivityHelper allows you to launch any activity on a remote node via a deep link. It requires the target activity to have a matching intent-filter.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            item {
+                StatusCard(
+                    title = "Target Node",
+                    value = nodeId ?: "No watch",
+                    detail = if (nodeId != null) "Watch app reachable" else "Connect a watch first",
+                    state = if (nodeId != null) StatusState.On else StatusState.Off,
+                )
+            }
+
+            item {
+                Button(
+                    onClick = manager::launchWatchActivity,
+                    enabled = nodeId != null && appAlive == true,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Launch Activity on Watch")
+                }
+            }
+
+            item { Spacer(Modifier.height(10.dp)) }
+
+            item { SectionHeader("How it works") }
+            item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 ) {
-                    Text(
-                        text = item,
-                        modifier = Modifier.padding(14.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "1. Sender uses RemoteActivityHelper to send an ACTION_VIEW intent.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = "2. Google Play Services routes the intent to the target node.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            text = "3. Target system finds a matching <intent-filter> and starts the activity.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }
