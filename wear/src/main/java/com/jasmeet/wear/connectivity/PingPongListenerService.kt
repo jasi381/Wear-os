@@ -12,11 +12,16 @@ import com.google.android.gms.wearable.WearableListenerService
 class PingPongListenerService : WearableListenerService() {
 
     override fun onMessageReceived(event: MessageEvent) {
-        Log.d(TAG, "onMessageReceived path=${event.path}")
+        Log.d(TAG, "onMessageReceived path=${event.path} source=${event.sourceNodeId}")
         if (event.path == WearCapabilityManager.PING_PATH) {
             Wearable.getMessageClient(this)
                 .sendMessage(event.sourceNodeId, WearCapabilityManager.PONG_PATH, byteArrayOf())
-            Log.d(TAG, "Replied pong to ${event.sourceNodeId}")
+                .addOnSuccessListener {
+                    Log.d(TAG, "Replied pong to ${event.sourceNodeId}")
+                }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "Failed to reply pong to ${event.sourceNodeId}", e)
+                }
         }
     }
 
